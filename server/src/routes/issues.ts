@@ -23,7 +23,7 @@ import {
   projectService,
 } from "../services/index.js";
 import { logger } from "../middleware/logger.js";
-import { forbidden, HttpError, unauthorized } from "../errors.js";
+import { conflict, forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
@@ -907,6 +907,160 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     res.json(comment);
+  });
+
+  router.delete("/issues/:id/comments/:commentId", async (req, res) => {
+    const id = req.params.id as string;
+    const commentId = req.params.commentId as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    const comment = await svc.getComment(commentId);
+    if (!comment || comment.issueId !== id) {
+      res.status(404).json({ error: "Comment not found" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+
+    // Board users can only delete their own comments.
+    if (req.actor.type === "board" && comment.authorUserId !== actor.actorId) {
+      res.status(403).json({ error: "You can only delete your own comments" });
+      return;
+    }
+
+    try {
+      await svc.deleteComment(id, commentId);
+    } catch (err) {
+      if (err instanceof HttpError) {
+        res.status(err.status).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "issue.comment_deleted",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        commentId,
+        identifier: issue.identifier,
+        issueTitle: issue.title,
+      },
+    });
+
+    res.status(204).end();
+  });
+
+  router.post("/issues/:id/comments/:commentId/retry", async (req, res) => {
+    const id = req.params.id as string;
+    const commentId = req.params.commentId as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+
+    // Fetch comment and verify it's the last one in parallel.
+    const [comment, lastCommentId] = await Promise.all([
+      svc.getComment(commentId),
+      svc.getLastCommentId(id),
+    ]);
+    if (!comment || comment.issueId !== id) {
+      res.status(404).json({ error: "Comment not found" });
+      return;
+    }
+    if (lastCommentId !== commentId) {
+      res.status(409).json({ error: "Only the last comment in the thread can be retried" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    const assigneeId = issue.assigneeAgentId;
+
+    void (async () => {
+      const wakeups = new Map<string, Parameters<typeof heartbeat.wakeup>[1]>();
+
+      if (assigneeId) {
+        wakeups.set(assigneeId, {
+          source: "automation",
+          triggerDetail: "manual",
+          reason: "issue_comment_retried",
+          payload: { issueId: id, commentId },
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: {
+            issueId: id,
+            taskId: id,
+            commentId,
+            wakeCommentId: commentId,
+            source: "issue.comment",
+            wakeReason: "issue_comment_retried",
+          },
+        });
+      }
+
+      let mentionedIds: string[] = [];
+      try {
+        mentionedIds = await svc.findMentionedAgents(issue.companyId, comment.body);
+      } catch (err) {
+        logger.warn({ err, issueId: id }, "failed to resolve @-mentions for retry");
+      }
+
+      for (const mentionedId of mentionedIds) {
+        if (wakeups.has(mentionedId)) continue;
+        wakeups.set(mentionedId, {
+          source: "automation",
+          triggerDetail: "manual",
+          reason: "issue_comment_retried",
+          payload: { issueId: id, commentId },
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: {
+            issueId: id,
+            taskId: id,
+            commentId,
+            wakeCommentId: commentId,
+            source: "comment.mention",
+            wakeReason: "issue_comment_retried",
+          },
+        });
+      }
+
+      for (const [agentId, wakeup] of wakeups.entries()) {
+        heartbeat
+          .wakeup(agentId, wakeup)
+          .catch((err) => logger.warn({ err, issueId: id, agentId }, "failed to wake agent on comment retry"));
+      }
+    })();
+
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "issue.comment_retried",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        commentId,
+        identifier: issue.identifier,
+        issueTitle: issue.title,
+      },
+    });
+
+    res.status(204).end();
   });
 
   router.post("/issues/:id/comments", validate(addIssueCommentSchema), async (req, res) => {

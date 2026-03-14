@@ -53,6 +53,10 @@ export const issuesApi = {
         ...(interrupt === undefined ? {} : { interrupt }),
       },
     ),
+  deleteComment: (id: string, commentId: string) =>
+    api.delete<void>(`/issues/${id}/comments/${commentId}`),
+  retryComment: (id: string, commentId: string) =>
+    api.post<void>(`/issues/${id}/comments/${commentId}/retry`, {}),
   listAttachments: (id: string) => api.get<IssueAttachment[]>(`/issues/${id}/attachments`),
   uploadAttachment: (
     companyId: string,

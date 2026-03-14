@@ -1152,6 +1152,43 @@ export function issueService(db: Db) {
           return comment ? redactIssueComment(comment) : null;
         }),
 
+    getLastCommentId: async (issueId: string): Promise<string | null> => {
+      const row = await db
+        .select({ id: issueComments.id })
+        .from(issueComments)
+        .where(eq(issueComments.issueId, issueId))
+        .orderBy(desc(issueComments.createdAt), desc(issueComments.id))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      return row?.id ?? null;
+    },
+
+    deleteComment: async (issueId: string, commentId: string) => {
+      // Atomic delete: only succeeds if commentId is currently the last comment.
+      // Using a subquery in WHERE prevents a TOCTOU race between the "is last?" check and DELETE.
+      const deleted = await db
+        .delete(issueComments)
+        .where(
+          and(
+            eq(issueComments.id, commentId),
+            eq(issueComments.issueId, issueId),
+            sql`${issueComments.id} = (
+              SELECT id FROM issue_comments
+              WHERE issue_id = ${issueId}::uuid
+              ORDER BY created_at DESC, id DESC
+              LIMIT 1
+            )`,
+          ),
+        )
+        .returning({ id: issueComments.id });
+
+      if (deleted.length === 0) {
+        throw conflict("Only the last comment in the thread can be deleted");
+      }
+
+      await db.update(issues).set({ updatedAt: new Date() }).where(eq(issues.id, issueId));
+    },
+
     addComment: async (issueId: string, body: string, actor: { agentId?: string; userId?: string }) => {
       const issue = await db
         .select({ companyId: issues.companyId })
