@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
@@ -443,6 +443,30 @@ export function IssueDetail() {
     },
   });
 
+  const deleteComment = useMutation({
+    mutationFn: (commentId: string) => issuesApi.deleteComment(issueId!, commentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+    },
+  });
+
+  const retryComment = useMutation({
+    mutationFn: (commentId: string) => issuesApi.retryComment(issueId!, commentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+    },
+  });
+
+  const handleDeleteLastComment = useCallback(
+    async (commentId: string) => { await deleteComment.mutateAsync(commentId); },
+    [deleteComment],
+  );
+
+  const handleRetryLastComment = useCallback(
+    async (commentId: string) => { await retryComment.mutateAsync(commentId); },
+    [retryComment],
+  );
+
   const uploadAttachment = useMutation({
     mutationFn: async (file: File) => {
       if (!selectedCompanyId) throw new Error("No company selected");
@@ -786,6 +810,9 @@ export function IssueDetail() {
               }
               await addComment.mutateAsync({ body, reopen });
             }}
+            onDeleteLastComment={handleDeleteLastComment}
+            onRetryLastComment={handleRetryLastComment}
+            retryingCommentId={retryComment.isPending ? retryComment.variables : null}
             imageUploadHandler={async (file) => {
               const attachment = await uploadAttachment.mutateAsync(file);
               return attachment.contentPath;

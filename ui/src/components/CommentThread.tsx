@@ -2,14 +2,14 @@ import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent } from "re
 import { Link, useLocation } from "react-router-dom";
 import type { IssueComment, Agent } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, Paperclip } from "lucide-react";
+import { Check, Copy, Paperclip, RotateCcw, Trash2 } from "lucide-react";
 import { Identity } from "./Identity";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { MarkdownBody } from "./MarkdownBody";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
 import { AgentIcon } from "./AgentIconPicker";
-import { formatDateTime } from "../lib/utils";
+import { cn, formatDateTime } from "../lib/utils";
 
 interface CommentWithRunMeta extends IssueComment {
   runId?: string | null;
@@ -33,6 +33,9 @@ interface CommentThreadProps {
   comments: CommentWithRunMeta[];
   linkedRuns?: LinkedRunItem[];
   onAdd: (body: string, reopen?: boolean, reassignment?: CommentReassignment) => Promise<void>;
+  onDeleteLastComment?: (commentId: string) => Promise<void>;
+  onRetryLastComment?: (commentId: string) => Promise<void>;
+  retryingCommentId?: string | null;
   issueStatus?: string;
   agentMap?: Map<string, Agent>;
   imageUploadHandler?: (file: File) => Promise<string>;
@@ -115,14 +118,72 @@ type TimelineItem =
   | { kind: "comment"; id: string; createdAtMs: number; comment: CommentWithRunMeta }
   | { kind: "run"; id: string; createdAtMs: number; run: LinkedRunItem };
 
+function DeleteButton({ onDelete }: { onDelete: () => Promise<void> }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (confirming) {
+    return (
+      <span className="flex items-center gap-1">
+        {error && <span className="text-xs text-destructive">{error}</span>}
+        <button
+          type="button"
+          className="text-xs text-destructive hover:text-destructive/80 transition-colors"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              await onDelete();
+              setConfirming(false);
+            } catch {
+              setError("Failed");
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "Deleting..." : "Confirm"}
+        </button>
+        <button
+          type="button"
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => { setConfirming(false); setError(null); }}
+        >
+          Cancel
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      className="text-muted-foreground hover:text-destructive transition-colors"
+      title="Delete comment"
+      onClick={() => setConfirming(true)}
+    >
+      <Trash2 className="h-3 w-3" />
+    </button>
+  );
+}
+
 const TimelineList = memo(function TimelineList({
   timeline,
   agentMap,
   highlightCommentId,
+  lastCommentId,
+  onDeleteLastComment,
+  onRetryLastComment,
+  retryingCommentId,
 }: {
   timeline: TimelineItem[];
   agentMap?: Map<string, Agent>;
   highlightCommentId?: string | null;
+  lastCommentId?: string | null;
+  onDeleteLastComment?: (commentId: string) => Promise<void>;
+  onRetryLastComment?: (commentId: string) => Promise<void>;
+  retryingCommentId?: string | null;
 }) {
   if (timeline.length === 0) {
     return <p className="text-sm text-muted-foreground">No comments or runs yet.</p>;
@@ -162,6 +223,7 @@ const TimelineList = memo(function TimelineList({
 
         const comment = item.comment;
         const isHighlighted = highlightCommentId === comment.id;
+        const isLast = comment.id === lastCommentId;
         return (
           <div
             key={comment.id}
@@ -187,6 +249,25 @@ const TimelineList = memo(function TimelineList({
                   {formatDateTime(comment.createdAt)}
                 </a>
                 <CopyMarkdownButton text={comment.body} />
+                {isLast && onRetryLastComment && (
+                  <button
+                    type="button"
+                    className={cn(
+                      "transition-colors",
+                      retryingCommentId === comment.id
+                        ? "text-muted-foreground/40 animate-spin cursor-not-allowed"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    title="Retry comment"
+                    disabled={retryingCommentId === comment.id}
+                    onClick={() => onRetryLastComment(comment.id)}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                  </button>
+                )}
+                {isLast && onDeleteLastComment && (
+                  <DeleteButton onDelete={() => onDeleteLastComment(comment.id)} />
+                )}
               </span>
             </div>
             <MarkdownBody className="text-sm">{comment.body}</MarkdownBody>
@@ -217,6 +298,9 @@ export function CommentThread({
   comments,
   linkedRuns = [],
   onAdd,
+  onDeleteLastComment,
+  onRetryLastComment,
+  retryingCommentId,
   issueStatus,
   agentMap,
   imageUploadHandler,
@@ -241,6 +325,9 @@ export function CommentThread({
   const hasScrolledRef = useRef(false);
 
   const isClosed = issueStatus ? CLOSED_STATUSES.has(issueStatus) : false;
+
+  // comments arrive DESC-sorted from the server, so comments[0] is the newest
+  const lastCommentId = comments.length > 0 ? comments[0].id : null;
 
   const timeline = useMemo<TimelineItem[]>(() => {
     const commentItems: TimelineItem[] = comments.map((comment) => ({
@@ -351,7 +438,15 @@ export function CommentThread({
     <div className="space-y-4">
       <h3 className="text-sm font-semibold">Comments &amp; Runs ({timeline.length})</h3>
 
-      <TimelineList timeline={timeline} agentMap={agentMap} highlightCommentId={highlightCommentId} />
+      <TimelineList
+        timeline={timeline}
+        agentMap={agentMap}
+        highlightCommentId={highlightCommentId}
+        lastCommentId={lastCommentId}
+        onDeleteLastComment={onDeleteLastComment}
+        onRetryLastComment={onRetryLastComment}
+        retryingCommentId={retryingCommentId}
+      />
 
       {liveRunSlot}
 
