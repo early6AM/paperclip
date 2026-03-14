@@ -5,7 +5,7 @@ export type AgentFilters = { hideIdle: boolean; hidePaused: boolean };
 
 export const DEFAULT_AGENT_FILTERS: AgentFilters = { hideIdle: false, hidePaused: false };
 
-type AgentFiltersUpdatedDetail = {
+export type AgentFiltersUpdatedDetail = {
   storageKey: string;
   filters: AgentFilters;
 };
@@ -39,6 +39,7 @@ export function writeAgentFilters(storageKey: string, filters: AgentFilters) {
     localStorage.setItem(storageKey, JSON.stringify(normalized));
   } catch {
     // Ignore storage write failures in restricted browser contexts.
+    return;
   }
   if (typeof window !== "undefined") {
     window.dispatchEvent(

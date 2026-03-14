@@ -6,12 +6,8 @@ import {
   readAgentFilters,
   writeAgentFilters,
   type AgentFilters,
+  type AgentFiltersUpdatedDetail,
 } from "../lib/agent-filters";
-
-type AgentFiltersUpdatedDetail = {
-  storageKey: string;
-  filters: AgentFilters;
-};
 
 export function useAgentFilters(companyId: string | null | undefined) {
   const storageKey = useMemo(() => {
@@ -63,12 +59,17 @@ export function useAgentFilters(companyId: string | null | undefined) {
       if (!storageKey) return;
       setFilters((prev) => {
         const next = { ...prev, [key]: !prev[key] };
-        writeAgentFilters(storageKey, next);
         return next;
       });
     },
     [storageKey],
   );
+
+  // Persist filter changes to localStorage (side effect kept outside state updater)
+  useEffect(() => {
+    if (!storageKey) return;
+    writeAgentFilters(storageKey, filters);
+  }, [storageKey, filters]);
 
   return { filters, updateFilter };
 }

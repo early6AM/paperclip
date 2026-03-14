@@ -7,6 +7,7 @@ import { ChevronRight, Plus, Eye, EyeOff, PauseCircle, CircleSlash } from "lucid
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
+import { useToast } from "../context/ToastContext";
 
 import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
@@ -103,6 +104,7 @@ export function SidebarAgents() {
   const { isMobile, setSidebarOpen } = useSidebar();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const { pushToast } = useToast();
 
   const { filters, updateFilter } = useAgentFilters(selectedCompanyId);
 
@@ -149,6 +151,10 @@ export function SidebarAgents() {
       );
       if (failures.length > 0) {
         console.error(`Failed to pause ${failures.length} agent(s)`, failures);
+        pushToast({
+          title: `Failed to pause ${failures.length} agent(s)`,
+          tone: "error",
+        });
       }
     },
   });
