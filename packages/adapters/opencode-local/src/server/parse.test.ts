@@ -47,4 +47,16 @@ describe("parseOpenCodeJsonl", () => {
     expect(isOpenCodeUnknownSessionError("", "unknown session id")).toBe(true);
     expect(isOpenCodeUnknownSessionError("all good", "")).toBe(false);
   });
+
+  it("detects ZodError session validation failures", () => {
+    const zodError = JSON.stringify({
+      code: "invalid_format",
+      format: "starts_with",
+      prefix: "ses",
+      path: ["sessionID"],
+      message: 'Invalid string: must start with "ses"',
+    });
+    expect(isOpenCodeUnknownSessionError("", zodError)).toBe(true);
+    expect(isOpenCodeUnknownSessionError(zodError, "")).toBe(true);
+  });
 });

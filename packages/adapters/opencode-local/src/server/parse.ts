@@ -93,7 +93,7 @@ export function isOpenCodeUnknownSessionError(stdout: string, stderr: string): b
     .filter(Boolean)
     .join("\n");
 
-  return /unknown\s+session|session\b.*\bnot\s+found|resource\s+not\s+found:.*[\\/]session[\\/].*\.json|notfounderror|no session/i.test(
+  return /unknown\s+session|session\b.*\bnot\s+found|resource\s+not\s+found:.*[\\/]session[\\/].*\.json|notfounderror|no session|invalid_format.*sessionID|sessionID.*starts_with|must start with .{0,5}ses/i.test(
     haystack,
   );
 }

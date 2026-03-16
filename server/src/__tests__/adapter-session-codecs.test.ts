@@ -144,6 +144,12 @@ describe("opencode resume recovery detection", () => {
       ),
     ).toBe(false);
   });
+
+  it("detects ZodError sessionID validation as a session error", () => {
+    const zodStderr =
+      'ZodError: [{"origin":"string","code":"invalid_format","format":"starts_with","prefix":"ses","path":["sessionID"],"message":"Invalid string: must start with \\"ses\\""}]';
+    expect(isOpenCodeUnknownSessionError("", zodStderr)).toBe(true);
+  });
 });
 
 describe("cursor resume recovery detection", () => {
