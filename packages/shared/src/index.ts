@@ -88,6 +88,7 @@ export type {
   IssueComment,
   IssueAttachment,
   IssueLabel,
+  StartsAtPrecision,
   Goal,
   Approval,
   ApprovalComment,

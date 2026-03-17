@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "@/lib/router";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue, StartsAtPrecision } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
@@ -14,15 +14,53 @@ import { formatAssigneeUserLabel } from "../lib/assignees";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
-import { formatDate, cn, projectUrl } from "../lib/utils";
+import { formatDate, formatDateTimeLocal, cn, projectUrl } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2 } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, Calendar, X } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 
 // TODO(issue-worktree-support): re-enable this UI once the workflow is ready to ship.
 const SHOW_EXPERIMENTAL_ISSUE_WORKTREE_UI = false;
+
+const PRECISION_LABELS: Record<StartsAtPrecision, string> = {
+  day: "Day",
+  week: "Week",
+  month: "Month",
+  datetime: "Exact time",
+};
+
+/** Format a date according to its startsAt precision. */
+function formatStartsAt(date: Date | string, precision: StartsAtPrecision): string {
+  const d = new Date(date);
+  if (precision === "datetime") return formatDateTimeLocal(d);
+  if (precision === "week") {
+    return `Week of ${formatDate(d)}`;
+  }
+  if (precision === "month") {
+    return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(d);
+  }
+  // "day"
+  return formatDate(d);
+}
+
+/** Convert a local datetime-local input value to a UTC ISO string. */
+function localInputToIso(value: string): string {
+  return new Date(value).toISOString();
+}
+
+/** Convert a Date to the format expected by datetime-local input (YYYY-MM-DDTHH:mm). */
+function dateToLocalInput(date: Date | string): string {
+  const d = new Date(date);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Convert a Date to date input value (YYYY-MM-DD). */
+function dateToDateInput(date: Date | string): string {
+  return dateToLocalInput(date).slice(0, 10);
+}
 
 interface IssuePropertiesProps {
   issue: Issue;
@@ -113,6 +151,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const [labelSearch, setLabelSearch] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState("#6366f1");
+  const [startsAtOpen, setStartsAtOpen] = useState(false);
 
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -168,6 +207,30 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
       : [...ids, labelId];
     onUpdate({ labelIds: next });
   };
+
+  const handleStartsAtDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (!val) return;
+    const precision = issue.startsAtPrecision ?? "day";
+    const isoDate = localInputToIso(val);
+    onUpdate({ startsAt: isoDate, startsAtPrecision: precision });
+  }, [issue.startsAtPrecision, onUpdate]);
+
+  const handleStartsAtTimeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (!val) return;
+    onUpdate({ startsAt: localInputToIso(val), startsAtPrecision: "datetime" });
+  }, [onUpdate]);
+
+  const handleStartsAtPrecisionChange = useCallback((precision: StartsAtPrecision) => {
+    if (!issue.startsAt) return;
+    onUpdate({ startsAt: new Date(issue.startsAt).toISOString(), startsAtPrecision: precision });
+  }, [issue.startsAt, onUpdate]);
+
+  const handleClearStartsAt = useCallback(() => {
+    onUpdate({ startsAt: null });
+    setStartsAtOpen(false);
+  }, [onUpdate]);
 
   const agentName = (id: string | null) => {
     if (!id || !agents) return null;
@@ -537,6 +600,98 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
           ) : undefined}
         >
           {projectContent}
+        </PropertyPicker>
+
+        {/* Starts row: date picker + precision selector with inherited label */}
+        <PropertyPicker
+          inline={inline}
+          label="Starts"
+          open={startsAtOpen}
+          onOpenChange={setStartsAtOpen}
+          triggerContent={
+            issue.effectiveStartsAt ? (
+              <>
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm">
+                  {formatStartsAt(
+                    issue.effectiveStartsAt,
+                    issue.startsAtPrecision ?? "day",
+                  )}
+                </span>
+                {/* Show inherited source when effective date differs from own startsAt */}
+                {!issue.startsAt && issue.effectiveStartsAt ? (
+                  <span className="text-xs text-muted-foreground">(from project)</span>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">No start date</span>
+              </>
+            )
+          }
+          popoverClassName="w-64"
+          extra={issue.startsAt ? (
+            <button
+              type="button"
+              className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
+              onClick={handleClearStartsAt}
+              title="Clear start date"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          ) : undefined}
+        >
+          <div className="space-y-2 p-1">
+            {/* Date input for day/week/month precision */}
+            {(issue.startsAtPrecision ?? "day") !== "datetime" && (
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Date</label>
+                <input
+                  type="date"
+                  className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                  value={issue.startsAt ? dateToDateInput(issue.startsAt) : ""}
+                  onChange={handleStartsAtDateChange}
+                />
+              </div>
+            )}
+            {/* Datetime input for exact time precision */}
+            {issue.startsAtPrecision === "datetime" && (
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Date & time</label>
+                <input
+                  type="datetime-local"
+                  className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                  value={issue.startsAt ? dateToLocalInput(issue.startsAt) : ""}
+                  onChange={handleStartsAtTimeChange}
+                />
+              </div>
+            )}
+            {/* Precision selector */}
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Precision</label>
+              <div className="flex flex-wrap gap-1">
+                {(Object.keys(PRECISION_LABELS) as StartsAtPrecision[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={cn(
+                      "px-2 py-0.5 text-xs rounded border border-border hover:bg-accent/50 transition-colors",
+                      (issue.startsAtPrecision ?? "day") === p && "bg-accent font-medium",
+                    )}
+                    onClick={() => handleStartsAtPrecisionChange(p)}
+                    disabled={!issue.startsAt && !issue.effectiveStartsAt}
+                  >
+                    {PRECISION_LABELS[p]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* When precision is datetime, show date picker to set date without losing time */}
+            {issue.startsAtPrecision === "datetime" && issue.startsAt && (
+              <p className="text-[11px] text-muted-foreground">Time shown in your local timezone.</p>
+            )}
+          </div>
         </PropertyPicker>
 
         {currentProjectSupportsExecutionWorkspace && (

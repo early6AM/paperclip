@@ -1,5 +1,6 @@
 import type { ProjectStatus } from "../constants.js";
 import type { ProjectExecutionWorkspacePolicy, WorkspaceRuntimeService } from "./workspace-runtime.js";
+import type { StartsAtPrecision } from "./issue.js";
 
 export interface ProjectGoalRef {
   id: string;
@@ -34,6 +35,8 @@ export interface Project {
   status: ProjectStatus;
   leadAgentId: string | null;
   targetDate: string | null;
+  startsAt: Date | null;
+  startsAtPrecision: StartsAtPrecision | null;
   color: string | null;
   executionWorkspacePolicy: ProjectExecutionWorkspacePolicy | null;
   workspaces: ProjectWorkspace[];
