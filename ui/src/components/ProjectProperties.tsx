@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Project } from "@paperclipai/shared";
+import type { Project, StartsAtPrecision } from "@paperclipai/shared";
 import { StatusBadge } from "./StatusBadge";
-import { cn, formatDate } from "../lib/utils";
+import { cn, formatDate, formatDateTimeLocal } from "../lib/utils";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
@@ -13,10 +13,37 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { AlertCircle, Check, ExternalLink, Github, Loader2, Plus, Trash2, X } from "lucide-react";
+import { AlertCircle, Calendar, Check, ExternalLink, Github, Loader2, Plus, Trash2, X } from "lucide-react";
 import { ChoosePathButton } from "./PathInstructionsModal";
 import { DraftInput } from "./agent-config-primitives";
 import { InlineEditor } from "./InlineEditor";
+
+const PRECISION_LABELS: Record<StartsAtPrecision, string> = {
+  day: "Day",
+  week: "Week",
+  month: "Month",
+  datetime: "Exact time",
+};
+
+function formatStartsAt(date: Date | string, precision: StartsAtPrecision): string {
+  const d = new Date(date);
+  if (precision === "datetime") return formatDateTimeLocal(d);
+  if (precision === "week") return `Week of ${formatDate(d)}`;
+  if (precision === "month") {
+    return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(d);
+  }
+  return formatDate(d);
+}
+
+function dateToLocalInput(date: Date | string): string {
+  const d = new Date(date);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function dateToDateInput(date: Date | string): string {
+  return dateToLocalInput(date).slice(0, 10);
+}
 
 const PROJECT_STATUSES = [
   { value: "backlog", label: "Backlog" },
@@ -156,6 +183,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const [goalOpen, setGoalOpen] = useState(false);
+  const [startsAtOpen, setStartsAtOpen] = useState(false);
   const [executionWorkspaceAdvancedOpen, setExecutionWorkspaceAdvancedOpen] = useState(false);
   const [workspaceMode, setWorkspaceMode] = useState<"local" | "repo" | null>(null);
   const [workspaceCwd, setWorkspaceCwd] = useState("");
@@ -170,6 +198,29 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
     onUpdate?.(data);
   };
   const fieldState = (field: ProjectConfigFieldKey): ProjectFieldSaveState => getFieldSaveState?.(field) ?? "idle";
+
+  const handleStartsAtDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (!val) return;
+    const precision = project.startsAtPrecision ?? "day";
+    onUpdate?.({ startsAt: new Date(val).toISOString(), startsAtPrecision: precision });
+  }, [project.startsAtPrecision, onUpdate]);
+
+  const handleStartsAtTimeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (!val) return;
+    onUpdate?.({ startsAt: new Date(val).toISOString(), startsAtPrecision: "datetime" });
+  }, [onUpdate]);
+
+  const handleStartsAtPrecisionChange = useCallback((precision: StartsAtPrecision) => {
+    if (!project.startsAt) return;
+    onUpdate?.({ startsAt: new Date(project.startsAt).toISOString(), startsAtPrecision: precision });
+  }, [project.startsAt, onUpdate]);
+
+  const handleClearStartsAt = useCallback(() => {
+    onUpdate?.({ startsAt: null });
+    setStartsAtOpen(false);
+  }, [onUpdate]);
 
   const { data: allGoals } = useQuery({
     queryKey: queryKeys.goals.list(selectedCompanyId!),
@@ -488,6 +539,80 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
             <span className="text-sm">{formatDate(project.targetDate)}</span>
           </PropertyRow>
         )}
+        {/* Starts row: date picker + precision selector */}
+        <PropertyRow label={<FieldLabel label="Starts" state="idle" />}>
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <Popover open={startsAtOpen} onOpenChange={setStartsAtOpen}>
+              <PopoverTrigger asChild>
+                <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
+                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                  {project.startsAt ? (
+                    <span className="text-sm">
+                      {formatStartsAt(project.startsAt, project.startsAtPrecision ?? "day")}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No start date</span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-2" align="end">
+                <div className="space-y-2">
+                  {(project.startsAtPrecision ?? "day") !== "datetime" && (
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">Date</label>
+                      <input
+                        type="date"
+                        className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                        value={project.startsAt ? dateToDateInput(project.startsAt) : ""}
+                        onChange={handleStartsAtDateChange}
+                      />
+                    </div>
+                  )}
+                  {project.startsAtPrecision === "datetime" && (
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">Date & time</label>
+                      <input
+                        type="datetime-local"
+                        className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                        value={project.startsAt ? dateToLocalInput(project.startsAt) : ""}
+                        onChange={handleStartsAtTimeChange}
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-xs text-muted-foreground block mb-1">Precision</label>
+                    <div className="flex flex-wrap gap-1">
+                      {(Object.keys(PRECISION_LABELS) as StartsAtPrecision[]).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          className={cn(
+                            "px-2 py-0.5 text-xs rounded border border-border hover:bg-accent/50 transition-colors",
+                            (project.startsAtPrecision ?? "day") === p && "bg-accent font-medium",
+                          )}
+                          onClick={() => handleStartsAtPrecisionChange(p)}
+                          disabled={!project.startsAt}
+                        >
+                          {PRECISION_LABELS[p]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            {project.startsAt && (onUpdate || onFieldUpdate) && (
+              <button
+                type="button"
+                className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
+                onClick={handleClearStartsAt}
+                title="Clear start date"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        </PropertyRow>
       </div>
 
       <Separator className="my-4" />

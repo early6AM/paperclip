@@ -28,6 +28,22 @@ export function formatDateTime(date: Date | string): string {
   });
 }
 
+/**
+ * Format a date with hours and minutes in the user's local timezone.
+ * Used for startsAt fields with "datetime" precision.
+ * Example output: "Jun 1, 2026 09:00"
+ */
+export function formatDateTimeLocal(date: Date | string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(date));
+}
+
 export function relativeTime(date: Date | string): string {
   const now = Date.now();
   const then = new Date(date).getTime();

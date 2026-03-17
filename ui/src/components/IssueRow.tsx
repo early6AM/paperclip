@@ -4,6 +4,7 @@ import { Link } from "@/lib/router";
 import { cn } from "../lib/utils";
 import { PriorityIcon } from "./PriorityIcon";
 import { StatusIcon } from "./StatusIcon";
+import { Clock } from "lucide-react";
 
 type UnreadState = "hidden" | "visible" | "fading";
 
@@ -38,6 +39,10 @@ export function IssueRow({
   const identifier = issue.identifier ?? issue.id.slice(0, 8);
   const showUnreadSlot = unreadState !== null;
   const showUnreadDot = unreadState === "visible" || unreadState === "fading";
+  // Show "Scheduled" badge when the effective start date is in the future
+  const isScheduled = Boolean(
+    issue.effectiveStartsAt && new Date(issue.effectiveStartsAt) > new Date(),
+  );
 
   return (
     <Link
@@ -82,8 +87,14 @@ export function IssueRow({
           ) : null}
         </span>
       </span>
-      {(desktopTrailing || trailingMeta) ? (
+      {(desktopTrailing || trailingMeta || isScheduled) ? (
         <span className="ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
+          {isScheduled && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400">
+              <Clock className="h-3 w-3" />
+              Scheduled
+            </span>
+          )}
           {desktopTrailing}
           {trailingMeta ? (
             <span className="text-xs text-muted-foreground">{trailingMeta}</span>

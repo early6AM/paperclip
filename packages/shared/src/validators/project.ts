@@ -66,6 +66,8 @@ const projectFields = {
   status: z.enum(PROJECT_STATUSES).optional().default("backlog"),
   leadAgentId: z.string().uuid().optional().nullable(),
   targetDate: z.string().optional().nullable(),
+  startsAt: z.string().datetime().nullable().optional(),
+  startsAtPrecision: z.enum(["day", "week", "month", "datetime"]).nullable().optional(),
   color: z.string().optional().nullable(),
   executionWorkspacePolicy: projectExecutionWorkspacePolicySchema.optional().nullable(),
   archivedAt: z.string().datetime().optional().nullable(),

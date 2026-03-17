@@ -42,6 +42,8 @@ export const createIssueSchema = z.object({
   assigneeAdapterOverrides: issueAssigneeAdapterOverridesSchema.optional().nullable(),
   executionWorkspaceSettings: issueExecutionWorkspaceSettingsSchema.optional().nullable(),
   labelIds: z.array(z.string().uuid()).optional(),
+  startsAt: z.string().datetime().nullable().optional(),
+  startsAtPrecision: z.enum(["day", "week", "month", "datetime"]).nullable().optional(),
 });
 
 export type CreateIssue = z.infer<typeof createIssueSchema>;
