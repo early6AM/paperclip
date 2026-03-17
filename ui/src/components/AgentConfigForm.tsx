@@ -276,6 +276,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const config = !isCreate ? ((props.agent.adapterConfig ?? {}) as Record<string, unknown>) : {};
   const runtimeConfig = !isCreate ? ((props.agent.runtimeConfig ?? {}) as Record<string, unknown>) : {};
   const heartbeat = !isCreate ? ((runtimeConfig.heartbeat ?? {}) as Record<string, unknown>) : {};
+  const sessionCompaction = (heartbeat.sessionCompaction ?? heartbeat.sessionRotation ?? {}) as Record<string, unknown>;
 
   const adapterType = isCreate
     ? props.values.adapterType
@@ -873,6 +874,26 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     Number(heartbeat.maxConcurrentRuns ?? 1),
                   )}
                   onCommit={(v) => mark("heartbeat", "maxConcurrentRuns", v)}
+                  immediate
+                  className={inputClass}
+                />
+              </Field>
+              <Field
+                label="Max context tokens"
+                hint="Maximum input tokens before the session is rotated. Default 180k for 200K-context models. Set to ~800k for Opus 4.6 (1M context)."
+              >
+                <DraftNumberInput
+                  value={(() => {
+                    const overlayCompaction = overlay.heartbeat.sessionCompaction as Record<string, unknown> | undefined;
+                    if (overlayCompaction && "maxRawInputTokens" in overlayCompaction) {
+                      return Number(overlayCompaction.maxRawInputTokens);
+                    }
+                    return Number(sessionCompaction.maxRawInputTokens ?? 180_000);
+                  })()}
+                  onCommit={(v) => {
+                    const existing = (overlay.heartbeat.sessionCompaction ?? sessionCompaction) as Record<string, unknown>;
+                    mark("heartbeat", "sessionCompaction", { ...existing, maxRawInputTokens: v });
+                  }}
                   immediate
                   className={inputClass}
                 />
