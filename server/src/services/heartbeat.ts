@@ -247,7 +247,7 @@ function parseSessionCompactionPolicy(agent: typeof agents.$inferSelect): Sessio
   return {
     enabled,
     maxSessionRuns: Math.max(0, Math.floor(asNumber(compaction.maxSessionRuns, 200))),
-    maxRawInputTokens: Math.max(0, Math.floor(asNumber(compaction.maxRawInputTokens, 2_000_000))),
+    maxRawInputTokens: Math.max(0, Math.floor(asNumber(compaction.maxRawInputTokens, 180_000))),
     maxSessionAgeHours: Math.max(0, Math.floor(asNumber(compaction.maxSessionAgeHours, 72))),
   };
 }
