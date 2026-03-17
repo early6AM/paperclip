@@ -26,6 +26,7 @@ import {
   detectClaudeLoginRequired,
   isClaudeMaxTurnsResult,
   isClaudeUnknownSessionError,
+  isClaudePromptTooLongError,
 } from "./parse.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -564,6 +565,22 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       await onLog(
         "stderr",
         `[paperclip] Claude resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+      );
+      const retry = await runAttempt(null);
+      return toAdapterResult(retry, { fallbackSessionId: null, clearSessionOnMissingSession: true });
+    }
+
+    // Session context exceeded model's context window — retry with a fresh session.
+    // Claude may return exitCode 0 with subtype=success but is_error=true for this case.
+    if (
+      sessionId &&
+      !initial.proc.timedOut &&
+      initial.parsed &&
+      isClaudePromptTooLongError(initial.parsed)
+    ) {
+      await onLog(
+        "stderr",
+        `[paperclip] Claude session "${sessionId}" prompt is too long; retrying with a fresh session.\n`,
       );
       const retry = await runAttempt(null);
       return toAdapterResult(retry, { fallbackSessionId: null, clearSessionOnMissingSession: true });
