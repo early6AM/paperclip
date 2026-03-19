@@ -491,7 +491,6 @@ export function CommentThread({
         retryingCommentId={retryingCommentId}
         companyId={companyId}
         projectId={projectId}
-        highlightCommentId={highlightCommentId}
       />
 
       {liveRunSlot}

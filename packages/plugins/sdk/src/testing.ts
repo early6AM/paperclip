@@ -376,6 +376,9 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           executionWorkspaceId: null,
           executionWorkspacePreference: null,
           executionWorkspaceSettings: null,
+          startsAt: null,
+          startsAtPrecision: null,
+          effectiveStartsAt: null,
           startedAt: null,
           completedAt: null,
           cancelledAt: null,
@@ -576,6 +579,8 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           status: input.status ?? "planned",
           parentId: input.parentId ?? null,
           ownerAgentId: input.ownerAgentId ?? null,
+          startsAt: null,
+          startsAtPrecision: null,
           createdAt: now,
           updatedAt: now,
         };
