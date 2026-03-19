@@ -7,6 +7,18 @@ export {
   isClaudeUnknownSessionError,
   isClaudePromptTooLongError,
 } from "./parse.js";
+export {
+  getQuotaWindows,
+  readClaudeAuthStatus,
+  readClaudeToken,
+  fetchClaudeQuota,
+  fetchClaudeCliQuota,
+  captureClaudeCliUsageText,
+  parseClaudeCliUsageText,
+  toPercent,
+  fetchWithTimeout,
+  claudeConfigDir,
+} from "./quota.js";
 import type { AdapterSessionCodec } from "@paperclipai/adapter-utils";
 
 function readNonEmptyString(value: unknown): string | null {
